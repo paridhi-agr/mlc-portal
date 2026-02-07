@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          String    @default("student") // "student" or "teacher"
+  accounts      Account[]
+  sessions      Session[]
+  assignments   Assignment[]
+  createdAt     DateTime  @default(now())
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Assignment {
+  id                    String    @id @default(cuid())
+  studentId             String
+  student               User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  worksheetFolderId     String    // worksheet Folder ID
+  worksheetName         String
+  worksheetDescription  String?
+  worksheetFileId       String    // worksheet file ID
+  worksheetFileName     String
+
+  solutionFileId        String?    // Solution File ID
+
+  assignedDate          DateTime  @default(now())
+  dueDate               DateTime
+  submittedDate         DateTime?
+
+  submissionFileId      String?   // Student's submission file ID
+  submissionFileName    String?
+
+  gradedFileId          String?   // Graded submission File ID
+  score                 Int?
+  status                String    @default("assigned") // assigned, submitted, graded, overdue
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([studentId])
+  @@index([status])
+}
+
+model AuthorizedUser {
+  id    String @id @default(cuid())
+  email String @unique
+  name  String?
+  role  String @default("student") // "student" or "teacher"
+  addedBy String?
+  addedAt DateTime  @default(now())
+  notes String?
+}
+
+
