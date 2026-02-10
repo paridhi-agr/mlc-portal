@@ -1,31 +1,24 @@
-// 'use client';
-
-// import { useSearchParams } from "next/navigation";
-// import Link from "next/link";
-
-// export default function AccessDeniedPage(){
-//     const searchParams = useSearchParams();
-//     const email = searchParams.get('email') || 'your email';
-
-//     return(
-//         <div >
-
-//         </div>
-//     )
-// }
-
 'use client';
 
 import { useSearchParams } from 'next/navigation';
 import { Mail, Phone, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { useState, useEffect } from 'react';
 
-export default function AccessDenied() {
+export default function AccessDeniedClient() {
   const searchParams = useSearchParams();
   const email = searchParams.get('email') || 'your email';
+  const [emailSent, setEmailSent] = useState(false);
+
+  useEffect(() => {
+    if (!emailSent) return;
+
+    const timer = setTimeout(() => setEmailSent(false), 4000);
+    return () => clearTimeout(timer);
+  }, [emailSent]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-amber-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
         {/* Icon */}
         <div className="flex justify-center mb-6">
@@ -44,7 +37,7 @@ export default function AccessDenied() {
         {/* Message */}
         <div className="bg-gray-50 rounded-lg p-4 mb-6">
           <p className="text-gray-700 text-center">
-            Your email address <span className="font-semibold text-indigo-600">{email}</span> is not registered in our system.
+            Your email address <span className="font-semibold text-amber-600">{email}</span> is not registered in our system.
           </p>
         </div>
 
@@ -53,19 +46,19 @@ export default function AccessDenied() {
           <h2 className="font-semibold text-gray-900 mb-3">To request access:</h2>
           <ol className="space-y-2 text-gray-600">
             <li className="flex items-start">
-              <span className="font-semibold text-indigo-600 mr-2">1.</span>
+              <span className="font-semibold text-amber-600 mr-2">1.</span>
               <span>Contact your learning center administrator</span>
             </li>
             <li className="flex items-start">
-              <span className="font-semibold text-indigo-600 mr-2">2.</span>
+              <span className="font-semibold text-amber-600 mr-2">2.</span>
               <span>Provide your email address for registration</span>
             </li>
             <li className="flex items-start">
-              <span className="font-semibold text-indigo-600 mr-2">3.</span>
+              <span className="font-semibold text-amber-600 mr-2">3.</span>
               <span>Wait for approval notification</span>
             </li>
             <li className="flex items-start">
-              <span className="font-semibold text-indigo-600 mr-2">4.</span>
+              <span className="font-semibold text-amber-600 mr-2">4.</span>
               <span>Sign in again once registered</span>
             </li>
           </ol>
@@ -75,19 +68,19 @@ export default function AccessDenied() {
         <div className="border-t border-gray-200 pt-6 mb-6">
           <h3 className="font-semibold text-gray-900 mb-3 text-center">Need Help?</h3>
           <div className="space-y-3">
-            <a 
-              href="mailto:admin@mathlearningcenter.com" 
-              className="flex items-center justify-center space-x-2 text-indigo-600 hover:text-indigo-700 transition"
+            <a
+              href="mailto:infobymlc@gmail.com"
+              className="flex items-center justify-center space-x-2 text-amber-600 hover:text-amber-700 transition"
             >
               <Mail className="w-5 h-5" />
-              <span>admin@mathlearningcenter.com</span>
+              <span>infobymlc@gmail.com</span>
             </a>
-            <a 
-              href="tel:+15551234567" 
-              className="flex items-center justify-center space-x-2 text-indigo-600 hover:text-indigo-700 transition"
+            <a
+              href="tel:+14153400095"
+              className="flex items-center justify-center space-x-2 text-amber-600 hover:text-amber-700 transition"
             >
               <Phone className="w-5 h-5" />
-              <span>(555) 123-4567</span>
+              <span>(415) 340-0095</span>
             </a>
           </div>
         </div>
@@ -96,19 +89,31 @@ export default function AccessDenied() {
         <div className="space-y-3">
           <Link
             href="/"
-            className="flex items-center justify-center space-x-2 w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 transition"
+            className="flex items-center justify-center space-x-2 w-full bg-amber-600 text-white py-3 rounded-lg font-semibold hover:bg-amber-700 transition"
           >
             <ArrowLeft className="w-5 h-5" />
             <span>Back to Home</span>
           </Link>
-          
+
           <a
-            href="mailto:admin@mathlearningcenter.com?subject=Access%20Request&body=Hi,%0A%0AI%20would%20like%20to%20request%20access%20to%20the%20Math%20Learning%20Portal.%0A%0AMy%20email:%20"
+            href="mailto:infobymlc@gmail.com?subject=Access%20Request&body=Hi,%0A%0AI%20would%20like%20to%20request%20access%20to%20the%20Math%20Learning%20Portal.%0A%0AMy%20email:%20"
+            onClick={() => setEmailSent(true)}
             className="flex items-center justify-center space-x-2 w-full bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
           >
             <Mail className="w-5 h-5" />
             <span>Request Access via Email</span>
           </a>
+          {emailSent && (
+            <p className="mt-3 text-sm text-gray-600 text-center">
+              {"If your email app didn’t open, please copy and email us directly at "}
+              <span
+                className="font-semibold cursor-pointer text-blue-600"
+                onClick={() => navigator.clipboard.writeText('infobymlc@gmail.com')}
+              >
+                 infobymlc@gmail.com
+              </span>
+            </p>
+          )}
         </div>
 
         {/* Footer Note */}

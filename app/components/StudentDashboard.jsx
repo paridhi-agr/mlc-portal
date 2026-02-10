@@ -26,6 +26,12 @@ const StudentDashboard = ({session}) => {
     };
 
     const handleMarkAsSubmitted = async (assignmentId) => {
+      const confirmed = window.confirm(
+        'Have you emailed your submission? Click OK to confirm.'
+      );
+    
+      if (!confirmed) return;
+      
       setSubmittingId(assignmentId);
 
       try {
@@ -186,8 +192,8 @@ const StudentDashboard = ({session}) => {
 
                   {assignment.status === 'assigned' && (
                     <div className="mt-4">
-                      <p className="text-xs text-gray-500 mt-4">
-                        Upload your work to the assignment folder in Google Drive, then click this button.
+                      <p className="text-sm text-gray-500 mt-4 mb-4">
+                        Email your completed assignment to <b>hwbymlc@gmail.com</b> with your name and assignment number in the email title, then click this button.
                       </p>
                       <button
                         onClick={() => handleMarkAsSubmitted(assignment.id)}
