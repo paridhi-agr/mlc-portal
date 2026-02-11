@@ -72,7 +72,7 @@ export async function POST(request) {
 
     const body = await request.json();
     const { 
-      studentId, 
+      studentIds, 
       worksheetName, 
       worksheetDescription, 
       worksheetFolderId,
@@ -82,12 +82,12 @@ export async function POST(request) {
       dueDate 
     } = body;
 
-    if (!studentId || !worksheetName || !worksheetFolderId || !worksheetFileId || !dueDate) {
+    if (studentIds.length === 0 || !worksheetName || !worksheetFolderId || !worksheetFileId || !dueDate) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const assignment = await prisma.assignment.create({
-      data: {
+    const assignment = await prisma.assignment.createMany({
+      data: studentIds.map((studentId) => ({
         studentId,
         worksheetName,
         worksheetDescription: worksheetDescription || '',
@@ -97,7 +97,7 @@ export async function POST(request) {
         solutionFileId: solutionFileId || null,
         dueDate: new Date(dueDate),
         status: 'assigned',
-      },
+      })),
     });
 
     return NextResponse.json({ assignment });
