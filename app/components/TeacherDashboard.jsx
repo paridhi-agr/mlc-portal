@@ -82,7 +82,7 @@ const TeacherDashboard = ({session}) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             studentId: selectedStudent,
-            worksheetName: folder.name.split('_')[0],
+            worksheetName: folder.name,
             worksheetDescription: assignmentDescription || '',
             worksheetFolderId: selectedFolder,
             worksheetFileId: selectedFiles.assignment,
