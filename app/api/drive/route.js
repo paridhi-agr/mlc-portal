@@ -6,7 +6,7 @@ import { listAssignmentFolders, listAssignmentFiles, getFileLink } from '@/lib/d
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions);
-
+    
     if (!session || session.user.role !== 'teacher') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -15,8 +15,10 @@ export async function GET(request) {
     const action = searchParams.get('action');
 
     if (action === 'listFolders') {
-      // List all assignment folders
-      const folders = await listAssignmentFolders();
+      // rootFolderId is the batch's driveFolderId — scopes the listing to that batch.
+      // Falls back to GOOGLE_DRIVE_FOLDER_ID env var if not provided.
+      const rootFolderId = searchParams.get('rootFolderId') || undefined;
+      const folders = await listAssignmentFolders(rootFolderId);
       return NextResponse.json({ folders });
     }
 

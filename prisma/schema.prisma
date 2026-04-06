@@ -44,6 +44,8 @@ model User {
   accounts      Account[]
   sessions      Session[]
   assignments   Assignment[]
+  // Many-to-many: a student can be enrolled in multiple batches
+  batches       BatchStudent[]
   createdAt     DateTime  @default(now())
 }
 
@@ -56,43 +58,69 @@ model VerificationToken {
 }
 
 model Assignment {
-  id                    String    @id @default(cuid())
-  studentId             String
-  student               User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  id                     String    @id @default(cuid())
+  studentId              String
+  student                User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-  worksheetFolderId     String    // worksheet Folder ID
-  worksheetName         String
-  worksheetDescription  String?
-  worksheetFileId       String    // worksheet file ID
-  worksheetFileName     String
+  batchId                String
+  batch                  Batch     @relation(fields: [batchId], references: [id])
 
-  solutionFileId        String?    // Solution File ID
+  worksheetFolderId      String
+  worksheetName          String
+  worksheetDescription   String?
+  worksheetFileId        String
+  worksheetFileName      String
 
-  assignedDate          DateTime  @default(now())
-  dueDate               DateTime
-  submittedDate         DateTime?
+  solutionFileId         String?
 
-  submissionFileId      String?   // Student's submission file ID
-  submissionFileName    String?
+  assignedDate           DateTime  @default(now())
+  dueDate                DateTime
 
-  gradedFileId          String?   // Graded submission File ID
-  score                 Int?
-  status                String    @default("assigned") // assigned, submitted, graded, overdue
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  submissionReceivedDate DateTime?
+
+  gradedFileId           String?
+  score                  Int?
+  status                 String    @default("assigned") // assigned | overdue | graded | late_submission
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   @@index([studentId])
+  @@index([batchId])
   @@index([status])
 }
 
 model AuthorizedUser {
-  id    String @id @default(cuid())
-  email String @unique
-  name  String?
-  role  String @default("student") // "student" or "teacher"
+  id      String   @id @default(cuid())
+  email   String   @unique
+  name    String?
+  role    String   @default("student") // "student" or "teacher"
   addedBy String?
-  addedAt DateTime  @default(now())
-  notes String?
+  addedAt DateTime @default(now())
+  notes   String?
 }
 
+model Batch {
+  id            String   @id @default(cuid())
+  name          String   // "Q1 2026"
+  driveFolderId String   // Google Drive folder root for this batch
+  isActive      Boolean  @default(false) // only one batch is active at a time
 
+  students      BatchStudent[]
+  assignments   Assignment[]
+
+  createdAt     DateTime @default(now())
+}
+
+// Explicit join table — student can belong to many batches
+model BatchStudent {
+  id        String   @id @default(cuid())
+  batchId   String
+  batch     Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enrolledAt DateTime @default(now())
+
+  @@unique([batchId, userId])
+  @@index([batchId])
+  @@index([userId])
+}

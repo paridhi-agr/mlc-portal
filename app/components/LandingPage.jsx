@@ -1,7 +1,7 @@
 "use client";
 import React from 'react';
 import { Calendar, Users, ClipboardList} from 'lucide-react';
-import { HeaderIcon } from "./HeaderIcon";
+import { HeaderIcon } from "./shared/HeaderIcon";
 import { signIn } from 'next-auth/react';
 
 // Landing Page

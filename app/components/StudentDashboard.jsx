@@ -1,245 +1,271 @@
 "use client";
-import React, { useState, useEffect } from 'react';
-import { HeaderIcon } from "./HeaderIcon";
-import { signOut } from 'next-auth/react';
-import { ClipboardList, LogOut, FileText, Download, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { X, ClipboardList, FileText, Download, CheckCircle } from "lucide-react";
+import { signOut } from "next-auth/react";
+import { AppNav } from "./shared/AppNav";
+import { SidebarContent } from "./shared/BatchSidebar";
+import { StatusBadge } from "./shared/StatusBadge";
+import { ScoreRing } from "./shared/ScoreRing";
 
-const StudentDashboard = ({session}) => {
-    const [assignments, setAssignments] = useState([]);
-    const [loadingData, setLoadingData] = useState(true);
-    const [submittingId, setSubmittingId] = useState(null);
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-    useEffect(() => {
-      fetchAssignments();
-    }, []);
+function avgScore(assignments) {
+  const scored = assignments.filter((a) => a.score !== null && a.score !== undefined);
+  if (!scored.length) return null;
+  return Math.round(scored.reduce((s, a) => s + a.score, 0) / scored.length);
+}
 
-    const fetchAssignments = async () => {
-      try {
-        const response = await fetch('/api/assignments');
-        const data = await response.json();
-        setAssignments(data.assignments || []);
-      } catch (error) {
-        console.error('Error fetching assignments:', error);
-      } finally {
-        setLoadingData(false);
-      }
-    };
+function formatDate(dateStr) {
+  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
-    const handleMarkAsSubmitted = async (assignmentId) => {
-      const confirmed = window.confirm(
-        'Have you emailed your submission? Click OK to confirm.'
-      );
-    
-      if (!confirmed) return;
-      
-      setSubmittingId(assignmentId);
+// ─── Assignment row card ──────────────────────────────────────────────────────
 
-      try {
-        const response = await fetch('/api/assignments', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            assignmentId,
-            action: 'markSubmitted',
-          }),
-        });
+const AssignmentRow = React.memo(function AssignmentRow({ assignment }) {
+  const isGraded = assignment.status === "graded" || assignment.status === "late_submission";
+  const isAssigned = assignment.status === "assigned";
+  const isOverdue = assignment.status === "overdue";
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to mark as submitted');
-        }
-
-        // Refresh assignments
-        await fetchAssignments();
-      } catch (error) {
-        console.error('Error marking assignment as submitted:', error);
-        alert('Failed to mark assignment as submitted. Please try again.');
-      } finally {
-        setSubmittingId(null);
-      }
-    };
-
-    const getStatusBadge = (status) => {
-      const styles = {
-        assigned: 'bg-blue-100 text-blue-800',
-        submitted: 'bg-yellow-100 text-yellow-800',
-        graded: 'bg-green-100 text-green-800',
-        overdue: 'bg-red-100 text-red-800'
-      };
-      return (
-        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${styles[status]}`}>
-          {status.charAt(0).toUpperCase() + status.slice(1)}
-        </span>
-      );
-    };
-
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <nav className="bg-[#fdf8eb] shadow-sm w-full">
-          <div className="flex items-center justify-between">
-            {/* LEFT: Icon flush to edge */}
-            <HeaderIcon className="block" />
-
-            {/* RIGHT: User actions */}
-            <div className="flex items-center space-x-4 pr-4 sm:pr-6 lg:pr-8">
-              {session?.user?.image && (
-                <img
-                  src={session.user.image}
-                  alt={session.user.name}
-                  className="w-8 h-8 rounded-full"
-                />
-              )}
-              <span className="text-gray-700">
-                Welcome, {session?.user?.name}
-              </span>
-              <button
-                onClick={() => signOut()}
-                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
-              >
-                <LogOut className="w-5 h-5" />
-                <span>Logout</span>
-              </button>
-            </div>
+  return (
+    <div className={`bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-2
+      ${isAssigned ? "border-l-[3px] border-l-orange-400" : ""}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+            <p className="text-sm font-medium text-gray-900 leading-snug">{assignment.worksheetName}</p>
+            <StatusBadge status={assignment.status} />
           </div>
-        </nav>
+          <p className="text-[11px] text-gray-400">Due {formatDate(assignment.dueDate)}</p>
+        </div>
+        {isGraded && assignment.score != null && <ScoreRing score={assignment.score} />}
+      </div>
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">My Assignments</h1>
+      {/* File links */}
+      <div className="flex flex-wrap gap-4">
+        <a
+          href={`https://drive.google.com/file/d/${assignment.worksheetFileId}/view`}
+          target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-orange-500 hover:text-orange-600 hover:underline"
+        >
+          <FileText className="w-3 h-3" /> View assignment
+        </a>
+        {assignment.solutionFileId && (
+        <a
+            href={`https://drive.google.com/file/d/${assignment.solutionFileId}/view`}
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 hover:underline"
+          >
+            <Download className="w-3 h-3" /> Solution
+          </a>
+        )}
+        {assignment.gradedFileId && (
+          <a
+            href={`https://drive.google.com/file/d/${assignment.gradedFileId}/view`}
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 hover:underline"
+          >
+            <CheckCircle className="w-3 h-3" /> Graded file
+          </a>
+        )}
+      </div>
 
-          {loadingData ? (
-            <div className="text-center py-12">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-orange-400"></div>
+      {isAssigned && (
+        <p className="text-[11px] text-gray-400">
+          Email to <span className="font-medium text-gray-600">hwbymlc@gmail.com</span> with your name and assignment number in the subject.
+        </p>
+      )}
+      {isOverdue && (
+        <div className="bg-red-50 border border-red-100 rounded px-3 py-1.5 text-xs text-red-700 font-medium">
+          This assignment is overdue
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ─── Main dashboard ───────────────────────────────────────────────────────────
+
+const StudentDashboard = ({ session }) => {
+  const [batches, setBatches] = useState([]);
+  const [activeBatch, setActiveBatch] = useState(null);
+  const [assignments, setAssignments] = useState([]);
+  const [loadingData, setLoadingData] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // ── Data fetching ────────────────────────────────────────────────────────
+
+  const fetchBatches = useCallback(async () => {
+    try {
+      const res = await fetch("/api/batches");
+      const data = await res.json();
+      const fetched = data.batches || [];
+      setBatches(fetched);
+      if (fetched.length) {
+        setActiveBatch((prev) => {
+          if (prev) return fetched.find((b) => b.id === prev.id) || fetched[0];
+          return fetched.find((b) => b.isActive) || fetched[0];
+        });
+      }
+    } catch (e) {
+      console.error("Error fetching batches:", e);
+    }
+  }, []);
+
+  const fetchAssignments = useCallback(async (batch) => {
+    if (!batch) return;
+    setLoadingData(true);
+    try {
+      const res = await fetch(`/api/assignments?batchId=${batch.id}`);
+      const data = await res.json();
+      setAssignments(data.assignments || []);
+    } catch (e) {
+      console.error("Error fetching assignments:", e);
+    } finally {
+      setLoadingData(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchBatches(); }, [fetchBatches]);
+  useEffect(() => {
+    setAssignments([]);
+    fetchAssignments(activeBatch);
+  }, [activeBatch?.id, fetchAssignments]);
+
+  const handleSelectBatch = useCallback((batch) => {
+    setActiveBatch(batch);
+    setSidebarOpen(false);
+  }, []);
+
+  // ── Derived stats ────────────────────────────────────────────────────────
+
+  const { submittedCount, totalCount, overdueCount, avg } = useMemo(() => {
+    const submittedCount = assignments.filter(
+      (a) => a.status === "graded" || a.status === "late_submission"
+    ).length;
+    const totalCount = assignments.length;
+    const overdueCount = assignments.filter((a) => a.status === "overdue").length;
+    const avg = avgScore(assignments);
+    return { submittedCount, totalCount, overdueCount, avg };
+  }, [assignments]);
+
+  const isHistoric = activeBatch ? !activeBatch.isActive : false;
+  const liveBatch = useMemo(() => batches.find((b) => b.isActive), [batches]);
+  const firstName = session?.user?.name?.split(" ")[0] || "there";
+
+  const sidebarProps = {
+    batches,
+    activeBatch,
+    liveBatch,
+    onSelectBatch: handleSelectBatch,
+    onNewBatch: null, // students can't create batches
+  };
+
+  // ── Render ───────────────────────────────────────────────────────────────
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+
+      <AppNav session={session} onMenuClick={() => setSidebarOpen((o) => !o)} />
+
+      {/* Mobile drawer backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/30 z-30 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <div className="flex flex-1 min-h-0">
+
+        {/* Desktop sidebar */}
+        <aside className="hidden md:flex w-52 shrink-0 bg-[#fdf8eb] border-r border-amber-100 flex-col">
+          <SidebarContent {...sidebarProps} />
+        </aside>
+
+        {/* Mobile drawer */}
+        <aside className={`fixed top-0 left-0 h-full w-64 bg-[#fdf8eb] border-r border-amber-100 flex flex-col z-40
+          transform transition-transform duration-200 ease-in-out md:hidden
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-amber-100">
+            <span className="text-sm font-medium text-amber-900">Batches</span>
+            <button onClick={() => setSidebarOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <SidebarContent {...sidebarProps} />
+        </aside>
+
+        {/* Main content */}
+        <div className="flex flex-col flex-1 min-w-0">
+
+          {/* Content header */}
+          <header className="flex items-center justify-between px-4 md:px-6 py-4 bg-white border-b border-gray-200 shrink-0">
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base font-medium text-gray-900">
+                  {activeBatch?.name ?? "My assignments"}
+                </h1>
+                {isHistoric && (
+                  <span className="text-[11px] font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
+                    Read only
+                  </span>
+                )}
+              </div>
+              {/* <p className="text-xs text-gray-400 mt-0.5">
+                Welcome back, {firstName}
+              </p> */}
             </div>
-          ) : (
-            <div className="space-y-6">
-              {assignments.map(assignment => (
-                <div key={assignment.id} className="bg-white rounded-lg shadow-md p-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex-1">
-                      <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                        {assignment.worksheetName}
-                      </h3>
-                      {assignment.worksheetDescription && (
-                        <p className="text-gray-600 mb-3">{assignment.worksheetDescription}</p>
-                      )}
-                      <div className="flex items-center space-x-4 text-sm text-gray-500">
-                        <span>Due: {new Date(assignment.dueDate).toLocaleDateString()}</span>
-                        {assignment.submittedDate && (
-                          <span>Submitted: {new Date(assignment.submittedDate).toLocaleDateString()}</span>
-                        )}
-                      </div>
+          </header>
+
+          <main className="flex-1 overflow-y-auto px-4 md:px-6 py-5 flex flex-col gap-5">
+            {loadingData ? (
+              <div className="flex items-center justify-center h-48">
+                <div className="w-8 h-8 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : !activeBatch ? (
+              <div className="flex items-center justify-center h-40 bg-white rounded-xl border border-gray-100 text-sm text-gray-400">
+                No batches available yet.
+              </div>
+            ) : (
+              <>
+                {/* Stats bar */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: "Assignments",   value: totalCount },
+                    { label: "Submitted",     value: submittedCount },
+                    { label: "Overdue",       value: overdueCount },
+                    { label: "Avg. score",    value: avg !== null ? `${avg}%` : "—" },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-white border border-gray-100 rounded-lg px-4 py-3">
+                      <p className="text-[11px] text-gray-400 mb-1">{label}</p>
+                      <p className="text-xl font-medium text-gray-900">{value}</p>
                     </div>
-                    {getStatusBadge(assignment.status)}
-                  </div>
+                  ))}
+                </div>
 
-                  {/* File Links */}
-                  <div className="flex flex-wrap gap-3 mb-4">
-                    <a
-                      href={`https://drive.google.com/file/d/${assignment.worksheetFileId}/view`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center space-x-2 text-orange-400 hover:text-orange-500 text-sm hover:font-semibold"
-                    >
-                      <FileText className="w-4 h-4" />
-                      <span>View Assignment</span>
-                    </a>
-
-                    {assignment.solutionFileId && (
-                      <a
-                        href={`https://drive.google.com/file/d/${assignment.solutionFileId}/view`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center space-x-2 text-green-600 hover:text-green-700 text-sm hover:font-semibold"
-                      >
-                        <Download className="w-4 h-4" />
-                        <span>View Solution</span>
-                      </a>
-                    )}
-
-                    {/* {assignment.submissionFileId && (
-                      <a
-                        href={`https://drive.google.com/file/d/${assignment.submissionFileId}/view`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center space-x-2 text-blue-600 hover:text-blue-700 text-sm"
-                      >
-                        <Upload className="w-4 h-4" />
-                        <span>Your Submission</span>
-                      </a>
-                    )} */}
-
-                    {assignment.gradedFileId && (
-                      <a
-                        href={`https://drive.google.com/file/d/${assignment.gradedFileId}/view`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center space-x-2 text-purple-600 hover:text-purple-700 text-sm hover:font-semibold"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        <span>View Graded Submission</span>
-                      </a>
-                    )}
-                  </div>
-
-                  {assignment.status === 'graded' && assignment.score && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-green-800 font-semibold">Score:</span>
-                        <span className="text-2xl font-bold text-green-600">{assignment.score}</span>
-                      </div>
+                {/* Assignment list */}
+                <div className="bg-white border border-gray-100 rounded-xl p-4 md:p-5 grid grid-cols-2 gap-3">
+                  {assignments.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 gap-3">
+                      <ClipboardList className="w-10 h-10 text-gray-300" />
+                      <p className="text-sm text-gray-400">No assignments in this batch</p>
                     </div>
-                  )}
-
-                  {assignment.status === 'assigned' && (
-                    <div className="mt-4">
-                      <p className="text-sm text-gray-500 mt-4 mb-4">
-                        Email your completed assignment to <b>hwbymlc@gmail.com</b> with your name and assignment number in the email title, then click this button.
-                      </p>
-                      <button
-                        onClick={() => handleMarkAsSubmitted(assignment.id)}
-                        disabled={submittingId === assignment.id}
-                        className="bg-orange-400 text-white px-6 py-2 rounded-lg hover:bg-orange-500 transition inline-flex items-center space-x-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                      >
-                        {submittingId === assignment.id ? (
-                          <>
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                            <span>Submitting...</span>
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle className="w-4 h-4" />
-                            <span>Mark as Submitted</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  )}
-
-                  {assignment.status === 'submitted' && (
-                    <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-yellow-800">
-                      Awaiting teacher review
-                    </div>
-                  )}
-
-                  {assignment.status === 'overdue' && (
-                    <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3 text-red-800">
-                      This assignment is overdue
-                    </div>
+                  ) : (
+                    assignments
+                      .slice()
+                      .sort((a, b) => new Date(b.dueDate) - new Date(a.dueDate))
+                      .map((a) => <AssignmentRow key={a.id} assignment={a} />)
                   )}
                 </div>
-              ))}
-
-              {assignments.length === 0 && (
-                <div className="text-center py-12 bg-white rounded-lg shadow-md">
-                  <ClipboardList className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600">No assignments yet</p>
-                </div>
-              )}
-            </div>
-          )}
+              </>
+            )}
+          </main>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
 export default StudentDashboard;

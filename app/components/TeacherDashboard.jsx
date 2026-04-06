@@ -1,653 +1,827 @@
-"use client";
-import React, { useState, useEffect } from 'react';
-import { Users, LogOut, FileText, Plus, X, Download } from 'lucide-react';
-import { HeaderIcon } from "./HeaderIcon";
-import { signOut } from 'next-auth/react';
+'use client';
+import { X, Plus, Menu } from "lucide-react";
+import { signOut } from "next-auth/react";
+import { AppNav } from "./shared/AppNav";
+import { SidebarContent } from "./shared/BatchSidebar";
+import { StatusBadge } from "./shared/StatusBadge";
+import { ScoreRing } from "./shared/ScoreRing";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
-const TeacherDashboard = ({ session }) => {
-  const [activeTab, setActiveTab] = useState('students');
-  const [activeStudentId, setActiveStudentId] = useState(null);
-  const [students, setStudents] = useState([]);
-  const [assignmentFolders, setAssignmentFolders] = useState([]);
-  const [assignments, setAssignments] = useState([]);
-  const [showAssignModal, setShowAssignModal] = useState(false);
-  const [selectedStudents, setSelectedStudents] = useState([]);
-  const [selectedFolder, setSelectedFolder] = useState(null);
-  const [selectedFiles, setSelectedFiles] = useState({ assignment: null });
-  const [folderFiles, setFolderFiles] = useState([]);
-  const [dueDate, setDueDate] = useState('');
-  const [assignmentDescription, setAssignmentDescription] = useState('');
-  const [gradeModalData, setGradeModalData] = useState(null);
-  const [gradeScore, setGradeScore] = useState('');
-  const [selectedSolutionFile, setSelectedSolutionFile] = useState('');
-  const [selectedGradedFile, setSelectedGradedFile] = useState('');
-  const [loadingData, setLoadingData] = useState(true);
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+function getAssignmentStatus(assignment) {
+  const due = new Date(assignment.dueDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (assignment.gradedFileId) {
+    const sub = new Date(assignment.submissionReceivedDate);
+    return sub <= due ? "graded" : "late_submission";
+  }
+  return due >= today ? "assigned" : "overdue";
+}
 
-  useEffect(() => {
-    // Set first student as active when students load
-    if (students.length > 0 && !activeStudentId) {
-      setActiveStudentId(students[0].id);
-    }
-  }, [students]);
+function avgScore(assignments) {
+  const scored = assignments.filter((a) => a.score !== null && a.score !== undefined);
+  if (!scored.length) return null;
+  return Math.round(scored.reduce((s, a) => s + a.score, 0) / scored.length);
+}
 
-  const fetchData = async () => {
-    try {
-      const [studentsRes, foldersRes, assignmentsRes] = await Promise.all([
-        fetch('/api/students'),
-        fetch('/api/drive?action=listFolders'),
-        fetch('/api/assignments'),
-      ]);
+function formatDate(dateStr) {
+  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
-      const studentsData = await studentsRes.json();
-      const foldersData = await foldersRes.json();
-      const assignmentsData = await assignmentsRes.json();
+// ─── Assignment card ──────────────────────────────────────────────────────────
+// Wrapped in React.memo so it only re-renders when its own props change.
 
-      setStudents(studentsData.students || []);
-      setAssignmentFolders(foldersData.folders || []);
-      setAssignments(assignmentsData.assignments || []);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoadingData(false);
-    }
-  };
-
-  const handleFolderSelect = async (folderId) => {
-    setSelectedFolder(folderId);
-    try {
-      const response = await fetch(`/api/drive?action=listFiles&folderId=${folderId}`);
-      const data = await response.json();
-      setFolderFiles(data.files || []);
-    } catch (error) {
-      console.error('Error fetching folder files:', error);
-    }
-  };
-
-  const handleAssignHomework = async () => {
-    if (selectedStudents.length === 0 || !selectedFolder || !selectedFiles.assignment || !dueDate) {
-      alert('Please fill all required fields');
-      return;
-    }
-
-    const folder = assignmentFolders.find(f => f.id === selectedFolder);
-    const assignmentFile = folderFiles.find(f => f.id === selectedFiles.assignment);
-
-    try {
-      const response = await fetch('/api/assignments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentIds: selectedStudents,
-          worksheetName: folder.name,
-          worksheetDescription: assignmentDescription || '',
-          worksheetFolderId: selectedFolder,
-          worksheetFileId: selectedFiles.assignment,
-          worksheetFileName: assignmentFile.name,
-          solutionFileId: null,
-          dueDate: new Date(dueDate).toISOString(),
-        }),
-      });
-
-      if (response.ok) {
-        setShowAssignModal(false);
-        setSelectedStudents([]);
-        setSelectedFolder(null);
-        setSelectedFiles({ assignment: null });
-        setFolderFiles([]);
-        setDueDate('');
-        setAssignmentDescription('');
-        fetchData();
-      }
-    } catch (error) {
-      console.error('Error assigning homework:', error);
-    }
-  };
-
-  const openGradeModal = async (assignment) => {
-    setGradeModalData(assignment);
-    setGradeScore('');
-    setSelectedSolutionFile('');
-    setSelectedGradedFile('');
-
-    // Fetch files from the assignment folder
-    if (assignment.worksheetFolderId) {
-      try {
-        const response = await fetch(`/api/drive?action=listFiles&folderId=${assignment.worksheetFolderId}`);
-        const data = await response.json();
-        setFolderFiles(data.files || []);
-      } catch (error) {
-        console.error('Error fetching folder files:', error);
-      }
-    }
-  };
-
-  const handleGradeSubmission = async () => {
-    if (!gradeModalData) return;
-
-    // Validate: either score or both files must be provided
-    const hasScore = gradeScore && gradeScore >= 0 && gradeScore <= 100;
-    const hasFiles = selectedSolutionFile && selectedGradedFile;
-
-    if (!hasScore && !hasFiles) {
-      alert('Please enter a score (0-100) or select both solution and graded files');
-      return;
-    }
-
-    try {
-      const updateData = {
-        assignmentId: gradeModalData.id,
-        action: 'grade',
-      };
-
-      // Add score if provided
-      if (hasScore) {
-        updateData.score = parseInt(gradeScore);
-      }
-
-      // Add solution file if selected
-      if (selectedSolutionFile) {
-        updateData.solutionFileId = selectedSolutionFile;
-      }
-
-      // Add graded file if selected
-      if (selectedGradedFile) {
-        updateData.gradedFileId = selectedGradedFile;
-      }
-
-      const response = await fetch('/api/assignments', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updateData),
-      });
-
-      if (response.ok) {
-        setGradeModalData(null);
-        setGradeScore('');
-        setSelectedSolutionFile('');
-        setSelectedGradedFile('');
-        setFolderFiles([]);
-        fetchData();
-      }
-    } catch (error) {
-      console.error('Error grading submission:', error);
-    }
-  };
-
-  const getDefaultDueDate = () => {
-    const date = new Date();
-    date.setDate(date.getDate() + 7);
-    return date.toISOString().split('T')[0];
-  };
-
-  // Get active student's assignments
-  const activeStudentAssignments = activeStudentId
-    ? assignments.filter(a => a.studentId === activeStudentId)
-    : [];
-
-  const activeStudent = students.find(s => s.id === activeStudentId);
+const AssignmentCard = React.memo(function AssignmentCard({ assignment, isHistoric, onGrade }) {
+  const status = getAssignmentStatus(assignment);
+  const gradeActive = !isHistoric && (status === "assigned" || status === "overdue");
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-[#fdf8eb] shadow-sm w-full">
-        <div className="flex items-center justify-between">
-          {/* LEFT: Icon flush to edge */}
-          <HeaderIcon className="block" />
+    <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-2 min-w-0">
+      <div>
+        <p className="text-sm font-medium text-gray-900 leading-snug">{assignment.worksheetName}</p>
+        <p className="text-[11px] text-gray-400 mt-0.5">Due {formatDate(assignment.dueDate)}</p>
+      </div>
+      {assignment.score !== null && assignment.score !== undefined && (
+        <p className="text-sm font-medium text-amber-800">{assignment.score}%</p>
+      )}
+      <div className="flex items-center justify-between mt-auto pt-1">
+        <StatusBadge status={status} />
+        <button
+          onClick={() => gradeActive && onGrade(assignment)}
+          disabled={!gradeActive}
+          className={`text-[11px] font-medium px-2.5 py-1 rounded border transition-colors
+            ${gradeActive
+              ? "border-orange-400 text-orange-500 hover:bg-orange-50 cursor-pointer"
+              : "border-gray-200 text-gray-300 cursor-not-allowed"
+            }`}
+        >
+          Grade
+        </button>
+      </div>
+    </div>
+  );
+});
 
-          {/* RIGHT: User actions */}
-          <div className="flex items-center space-x-4 pr-4 sm:pr-6 lg:pr-8">
-            {session?.user?.image && (
-              <img
-                src={session.user.image}
-                alt={session.user.name}
-                className="w-8 h-8 rounded-full"
-              />
-            )}
-            <span className="text-gray-700">
-              Welcome, {session?.user?.name}
-            </span>
+// ─── Student tabs panel ───────────────────────────────────────────────────────
+
+const StudentPanel = React.memo(function StudentPanel({ students, batchId, isHistoric, onGrade }) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const prevBatchId = useRef(batchId);
+
+  // Only reset to first student when the batch changes, not on every render
+  useEffect(() => {
+    if (prevBatchId.current !== batchId) {
+      prevBatchId.current = batchId;
+      setActiveIdx(0);
+    }
+  }, [batchId]);
+
+  if (!students.length) {
+    return (
+      <p className="text-sm text-gray-400 py-8 text-center">
+        No students enrolled in this batch yet.
+      </p>
+    );
+  }
+
+  // Guard against activeIdx pointing past end of list (e.g. after batch switch)
+  const safeIdx = Math.min(activeIdx, students.length - 1);
+  const student = students[safeIdx];
+  const avg = avgScore(student.assignments);
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Student name tabs */}
+      <div className="flex flex-wrap gap-2">
+        {students.map((s, i) => {
+          const sAvg = avgScore(s.assignments);
+          const isActive = i === safeIdx;
+          return (
             <button
-              onClick={() => signOut()}
-              className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
+              key={s.id}
+              onClick={() => setActiveIdx(i)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors
+                ${isActive
+                  ? "bg-orange-500 text-white border-orange-500"
+                  : "bg-amber-50 text-orange-500 border-orange-300 hover:bg-orange-50"
+                }`}
             >
-              <LogOut className="w-5 h-5" />
-              <span>Logout</span>
+              {s.name}
+              {sAvg !== null && (
+                <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium
+                  ${isActive ? "bg-white/25 text-white" : "bg-orange-100 text-orange-600"}`}>
+                  {sAvg}%
+                </span>
+              )}
             </button>
-          </div>
+          );
+        })}
+      </div>
+
+      {/* Active student info */}
+      <div className="flex items-center gap-3">
+        {student.image && (
+          <img src={student.image} alt={student.name} className="w-8 h-8 rounded-full" />
+        )}
+        <div>
+          <p className="text-sm font-medium text-gray-900">{student.name}</p>
+          <p className="text-xs text-gray-400">{student.email}</p>
         </div>
-      </nav>
-
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Teacher Dashboard</h1>
-          <button
-            onClick={() => {
-              setShowAssignModal(true);
-              setDueDate(getDefaultDueDate());
-            }}
-            className="bg-orange-400 text-white px-6 py-2 rounded-lg hover:bg-orange-500 transition flex items-center space-x-2"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Assign Homework</span>
-          </button>
-        </div>
-
-        <div className="flex space-x-4 mb-8">
-          <button
-            onClick={() => setActiveTab('students')}
-            className={`px-6 py-3 rounded-lg font-semibold transition ${activeTab === 'students'
-              ? 'bg-orange-400 text-white'
-              : 'bg-white text-gray-700 hover:bg-gray-100'
-              }`}
-          >
-            Students
-          </button>
-          <button
-            onClick={() => setActiveTab('assignments')}
-            className={`px-6 py-3 rounded-lg font-semibold transition ${activeTab === 'assignments'
-              ? 'bg-orange-400 text-white'
-              : 'bg-white text-gray-700 hover:bg-gray-100'
-              }`}
-          >
-            Assignment Folders
-          </button>
-        </div>
-
-        {loadingData ? (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-orange-400"></div>
-          </div>
-        ) : (
-          <>
-            {activeTab === 'students' && (
-              <div>
-                {/* Student Tabs */}
-                {students.length > 0 && (
-                  <div className="flex space-x-2 mb-6 overflow-x-auto pb-2">
-                    {students.map(student => (
-                      <button
-                        key={student.id}
-                        onClick={() => setActiveStudentId(student.id)}
-                        className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition ${activeStudentId === student.id
-                          ? 'bg-amber-50 text-orange-500 border-2 border-orange-400'
-                          : 'bg-white text-gray-700 hover:bg-gray-100 border-2 border-transparent'
-                          }`}
-                      >
-                        {student.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Active Student Details */}
-                {activeStudent && (
-                  <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-                    <div className="flex items-center mb-4">
-                      {activeStudent.image && (
-                        <img src={activeStudent.image} alt={activeStudent.name} className="w-16 h-16 rounded-full mr-4" />
-                      )}
-                      <div>
-                        <h2 className="text-2xl font-semibold text-gray-900">{activeStudent.name}</h2>
-                        <p className="text-gray-600">{activeStudent.email}</p>
-                      </div>
-                    </div>
-
-                    {/* Student's Assignments */}
-                    {activeStudentAssignments.length > 0 ? (
-                      <div className="space-y-3">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-3">Assignments</h3>
-                        {activeStudentAssignments.map(assignment => (
-                          <div
-                            key={assignment.id}
-                            className="border border-gray-200 rounded-lg p-4 flex justify-between items-center"
-                          >
-                            <div className="flex-1">
-                              <p className="font-semibold text-gray-900">{assignment.worksheetName}</p>
-                              {assignment.worksheetDescription && (
-                                <p className="text-sm text-gray-600 mt-1">{assignment.worksheetDescription}</p>
-                              )}
-                              <p className="text-sm text-gray-600 mt-1">
-                                Due: {new Date(assignment.dueDate).toLocaleDateString()}
-                              </p>
-                              {assignment.submittedDate && (
-                                <p className="text-sm text-gray-600">
-                                  Submitted: {new Date(assignment.submittedDate).toLocaleDateString()}
-                                </p>
-                              )}
-                              <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-semibold ${assignment.status === 'assigned' ? 'bg-blue-100 text-blue-800' :
-                                assignment.status === 'submitted' ? 'bg-yellow-100 text-yellow-800' :
-                                  assignment.status === 'graded' ? 'bg-green-100 text-green-800' :
-                                    'bg-red-100 text-red-800'
-                                }`}>
-                                {assignment.status}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-4">
-                              {assignment.status === 'graded' && (
-                                <span className="text-lg font-bold text-green-600">
-                                  {assignment.score}
-                                </span>
-                              )}
-                              {assignment.status === 'submitted' && (
-                                <button
-                                  onClick={() => openGradeModal(assignment)}
-                                  className="bg-orange-400 text-white px-4 py-2 rounded-lg hover:bg-orange-500 transition"
-                                >
-                                  Grade
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-gray-500 italic">No assignments yet</p>
-                    )}
-                  </div>
-                )}
-
-                {students.length === 0 && (
-                  <div className="text-center py-12 bg-white rounded-lg shadow-md">
-                    <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600">No students registered yet</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeTab === 'assignments' && (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {assignmentFolders.map(folder => (
-                  <div key={folder.id} className="bg-white rounded-lg shadow-md p-6">
-                    <FileText className="w-12 h-12 text-orange-400 mb-3" />
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">{folder.name}</h3>
-                    <p className="text-sm text-gray-500 mb-4">
-                      Created: {new Date(folder.createdTime).toLocaleDateString()}
-                    </p>
-                    <a
-                      href={folder.webViewLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-orange-400 hover:text-orange-500 text-sm"
-                    >
-                      View in Drive →
-                    </a>
-                  </div>
-                ))}
-
-                {assignmentFolders.length === 0 && (
-                  <div className="col-span-full text-center py-12 bg-white rounded-lg shadow-md">
-                    <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600">No assignment folders found</p>
-                    <p className="text-sm text-gray-500 mt-2">Create an "Assignments" folder in your Google Drive</p>
-                  </div>
-                )}
-              </div>
-            )}
-          </>
+        {avg !== null && (
+          <span className="ml-auto text-sm font-medium text-amber-800 bg-amber-50 px-3 py-1 rounded-full">
+            {avg}% avg
+          </span>
         )}
       </div>
 
-      {/* Assign Homework Modal */}
-      {showAssignModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-2xl font-bold">Assign Homework</h3>
-              <button onClick={() => setShowAssignModal(false)} className="text-gray-500 hover:text-gray-700">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              {/* Student Selection */}
-              <div className="w-full border border-gray-300 rounded-lg p-4 space-y-3">
-                <p className="font-medium">Assign To</p>
-
-                {/* Select All */}
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={selectedStudents.length === students.length && students.length > 0}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedStudents(students.map((s) => s.id));
-                      } else {
-                        setSelectedStudents([]);
-                      }
-                    }}
-                    className="w-4 h-4"
-                  />
-                  <span className="font-medium">All Students</span>
-                </label>
-
-                {/* Student List */}
-                <div className="max-h-48 overflow-y-auto border-t pt-3 space-y-2">
-                  {students.map((student) => (
-                    <label key={student.id} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedStudents.includes(student.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedStudents([...selectedStudents, student.id]);
-                          } else {
-                            setSelectedStudents(
-                              selectedStudents.filter((id) => id !== student.id)
-                            );
-                          }
-                        }}
-                        className="w-4 h-4"
-                      />
-                      <span>{student.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Folder Selection */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Select Assignment Folder <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={selectedFolder || ''}
-                  onChange={(e) => handleFolderSelect(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
-                >
-                  <option value="">Choose a folder</option>
-                  {assignmentFolders.map(folder => (
-                    <option key={folder.id} value={folder.id}>{folder.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Assignment Description */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Assignment Description (Optional)
-                </label>
-                <textarea
-                  value={assignmentDescription}
-                  onChange={(e) => setAssignmentDescription(e.target.value)}
-                  placeholder="Enter assignment description or instructions..."
-                  rows={3}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
-                />
-              </div>
-
-              {/* Assignment File Selection */}
-              {selectedFolder && folderFiles.length > 0 && (
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Assignment File <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={selectedFiles.assignment || ''}
-                    onChange={(e) => setSelectedFiles({ ...selectedFiles, assignment: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
-                  >
-                    <option value="">Choose assignment file</option>
-                    {folderFiles.map(file => (
-                      <option key={file.id} value={file.id}>{file.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Due Date */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Due Date <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
-                />
-              </div>
-            </div>
-            <div className="flex space-x-3 mt-6">
-              <button
-                onClick={handleAssignHomework}
-                disabled={selectedStudents.length === 0 || !selectedFolder || !selectedFiles.assignment || !dueDate}
-                className="flex-1 bg-orange-400 text-white py-2 rounded-lg hover:bg-orange-500 transition disabled:bg-gray-400"
-              >
-                Assign
-              </button>
-              <button
-                onClick={() => {
-                  setShowAssignModal(false);
-                  setSelectedStudents([]);
-                  setSelectedFolder(null);
-                  setSelectedFiles({ assignment: null });
-                  setFolderFiles([]);
-                  setDueDate('');
-                  setAssignmentDescription('');
-                }}
-                className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+      {/* Assignment cards */}
+      {student.assignments.length === 0 ? (
+        <p className="text-sm text-gray-400 italic">No assignments yet for this student.</p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {student.assignments.map((a) => (
+            <AssignmentCard key={a.id} assignment={a} isHistoric={isHistoric} onGrade={onGrade} />
+          ))}
         </div>
       )}
+    </div>
+  );
+});
 
-      {/* Grade Modal */}
-      {gradeModalData && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-2xl font-bold">Grade Submission</h3>
-              <button onClick={() => setGradeModalData(null)} className="text-gray-500 hover:text-gray-700">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            <p className="text-gray-600 mb-2">
-              Student: {gradeModalData.student?.name}
-            </p>
-            <p className="text-gray-600 mb-4">
-              Worksheet: {gradeModalData.worksheetName}
-            </p>
+// ─── Grade modal ──────────────────────────────────────────────────────────────
 
-            {/* View Submission */}
-            {gradeModalData.submissionFileId && (
-              <a
-                href={`https://drive.google.com/file/d/${gradeModalData.submissionFileId}/view`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center space-x-2 text-orange-400 hover:text-orange-500 mb-6"
-              >
-                <Download className="w-4 h-4" />
-                <span>View Submission</span>
-              </a>
-            )}
+function GradeModal({ assignment, folderFiles, loadingFiles, onClose, onSubmit }) {
+  const [score, setScore] = useState("");
+  const [submissionDate, setSubmissionDate] = useState(new Date().toISOString().split("T")[0]);
+  const [solutionFile, setSolutionFile] = useState("");
+  const [gradedFile, setGradedFile] = useState("");
 
-            <div className="space-y-4">
-              {/* Score Input */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Score (0-100)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={gradeScore}
-                  onChange={(e) => setGradeScore(e.target.value)}
-                  placeholder="Enter score or leave blank"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
-                />
+  function handleSubmit() {
+    const hasScore = score !== "" && Number(score) >= 0 && Number(score) <= 100;
+    const hasFiles = solutionFile && gradedFile;
+    if (!submissionDate) { alert("Submission received date is required."); return; }
+    if (!hasScore && !hasFiles) {
+      alert("Please enter a score (0–100) or select both solution and graded files.");
+      return;
+    }
+    const safeDate = new Date(submissionDate);
+    safeDate.setUTCHours(12, 0, 0, 0);
+    onSubmit({
+      assignmentId: assignment.id,
+      action: "grade",
+      submissionReceivedDate: safeDate.toISOString(),
+      ...(hasScore && { score: parseInt(score) }),
+      ...(solutionFile && { solutionFileId: solutionFile }),
+      ...(gradedFile && { gradedFileId: gradedFile }),
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto p-6 flex flex-col gap-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-base font-medium text-gray-900">Grade submission</h2>
+            <p className="text-sm text-orange-500 mt-0.5">{assignment.worksheetName}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{assignment.student?.name}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 mt-0.5">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500">Submission received date <span className="text-red-400">*</span></span>
+            <input type="date" value={submissionDate} onChange={(e) => setSubmissionDate(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500">Score (0–100)</span>
+            <input type="number" min="0" max="100" value={score} onChange={(e) => setScore(e.target.value)}
+              placeholder="Leave blank if not scoring yet"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500">Solution file</span>
+            <select value={solutionFile} onChange={(e) => setSolutionFile(e.target.value)}
+              disabled={loadingFiles}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 disabled:opacity-50">
+              <option value="">No solution file</option>
+              {folderFiles.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500">Graded submission file</span>
+            <select value={gradedFile} onChange={(e) => setGradedFile(e.target.value)}
+              disabled={loadingFiles}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 disabled:opacity-50">
+              <option value="">No graded file</option>
+              {folderFiles.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          <p className="text-xs text-amber-700">
+            Enter the date the student emailed their homework. The system will automatically detect
+            late submissions. Provide a score, both files, or all three.
+          </p>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">
+            Cancel
+          </button>
+          <button onClick={handleSubmit}
+            className="px-4 py-2 text-sm font-medium bg-orange-500 text-white rounded-lg hover:bg-orange-600">
+            Submit grade
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Assign modal ─────────────────────────────────────────────────────────────
+
+function AssignModal({ batch, assignmentFolders, onClose, onSubmit }) {
+  const batchStudents = batch.students || [];
+  const [selectedStudents, setSelectedStudents] = useState(batchStudents.map((s) => s.id));
+  const [selectedFolder, setSelectedFolder] = useState("");
+  const [folderFiles, setFolderFiles] = useState([]);
+  const [selectedFile, setSelectedFile] = useState("");
+  const [description, setDescription] = useState("");
+  const [dueDate, setDueDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().split("T")[0];
+  });
+
+  async function handleFolderChange(folderId) {
+    setSelectedFolder(folderId);
+    setSelectedFile("");
+    setFolderFiles([]);
+    if (!folderId) return;
+    try {
+      const res = await fetch(`/api/drive?action=listFiles&folderId=${folderId}`);
+      const data = await res.json();
+      setFolderFiles(data.files || []);
+    } catch (e) {
+      console.error("Error fetching folder files:", e);
+    }
+  }
+
+  function toggleStudent(id) {
+    setSelectedStudents((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    );
+  }
+
+  function handleSubmit() {
+    if (!selectedFolder || !selectedFile || !dueDate || !selectedStudents.length) {
+      alert("Please fill in all required fields and select at least one student.");
+      return;
+    }
+    const folder = assignmentFolders.find((f) => f.id === selectedFolder);
+    const file = folderFiles.find((f) => f.id === selectedFile);
+    const safeDueDate = new Date(dueDate);
+    safeDueDate.setUTCHours(12, 0, 0, 0);
+    onSubmit({
+      batchId: batch.id,
+      studentIds: selectedStudents,
+      worksheetName: folder.name,
+      worksheetDescription: description,
+      worksheetFolderId: selectedFolder,
+      worksheetFileId: selectedFile,
+      worksheetFileName: file.name,
+      solutionFileId: null,
+      dueDate: safeDueDate,
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-medium text-gray-900">Assign homework</h2>
+            <p className="text-xs text-orange-500 mt-0.5">{batch.name}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500">Assign to <span className="text-red-400">*</span></span>
+            <div className="border border-gray-200 rounded-lg p-3 flex flex-col gap-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <input type="checkbox"
+                  checked={selectedStudents.length === batchStudents.length && batchStudents.length > 0}
+                  onChange={(e) => setSelectedStudents(e.target.checked ? batchStudents.map((s) => s.id) : [])}
+                  className="w-4 h-4 accent-orange-500" />
+                All students in batch
+              </label>
+              <div className="border-t border-gray-100 pt-2 flex flex-col gap-1.5 max-h-36 overflow-y-auto">
+                {batchStudents.map((s) => (
+                  <label key={s.id} className="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={selectedStudents.includes(s.id)}
+                      onChange={() => toggleStudent(s.id)} className="w-4 h-4 accent-orange-500" />
+                    {s.name}
+                  </label>
+                ))}
               </div>
-
-              {/* Solution File Selection */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Solution File (Optional)
-                </label>
-                <select
-                  value={selectedSolutionFile}
-                  onChange={(e) => setSelectedSolutionFile(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
-                >
-                  <option value="">No solution file</option>
-                  {folderFiles.map(file => (
-                    <option key={file.id} value={file.id}>{file.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Graded File Selection */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Graded Submission File
-                </label>
-                <select
-                  value={selectedGradedFile}
-                  onChange={(e) => setSelectedGradedFile(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400"
-                >
-                  <option value="">No graded file</option>
-                  {folderFiles.map(file => (
-                    <option key={file.id} value={file.id}>{file.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4 mb-4">
-              <p className="text-xs text-blue-700">
-                Note: You can provide a score, attach files, or both. At least one must be provided.
-              </p>
-            </div>
-
-            <div className="flex space-x-3">
-              <button
-                onClick={handleGradeSubmission}
-                className="flex-1 bg-orange-400 text-white py-2 rounded-lg hover:bg-orange-500 transition"
-              >
-                Submit Grade
-              </button>
-              <button
-                onClick={() => {
-                  setGradeModalData(null);
-                  setGradeScore('');
-                  setSelectedSolutionFile('');
-                  setSelectedGradedFile('');
-                  setFolderFiles([]);
-                }}
-                className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition"
-              >
-                Cancel
-              </button>
             </div>
           </div>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500">Assignment folder <span className="text-red-400">*</span></span>
+            <select value={selectedFolder} onChange={(e) => handleFolderChange(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400">
+              <option value="">Choose a folder</option>
+              {assignmentFolders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+          </label>
+          {selectedFolder && folderFiles.length > 0 && (
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-gray-500">Assignment file <span className="text-red-400">*</span></span>
+              <select value={selectedFile} onChange={(e) => setSelectedFile(e.target.value)}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400">
+                <option value="">Choose a file</option>
+                {folderFiles.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500">Description (optional)</span>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)}
+              placeholder="Assignment instructions or notes..." rows={2}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 resize-none" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500">Due date <span className="text-red-400">*</span></span>
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
+          </label>
         </div>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+          <button onClick={handleSubmit} className="px-4 py-2 text-sm font-medium bg-orange-500 text-white rounded-lg hover:bg-orange-600">Assign</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Create batch modal ───────────────────────────────────────────────────────
+
+function CreateBatchModal({ allStudents, onClose, onCreated }) {
+  const [batchName, setBatchName] = useState("");
+  const [driveFolderId, setDriveFolderId] = useState("");
+  const [setActive, setSetActive] = useState(false);
+  const [selectedExisting, setSelectedExisting] = useState([]);
+  const [newStudents, setNewStudents] = useState([{ name: "", email: "" }]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  function toggleExisting(id) {
+    setSelectedExisting((prev) => prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]);
+  }
+
+  function updateNew(i, field, value) {
+    const copy = [...newStudents];
+    copy[i][field] = value;
+    setNewStudents(copy);
+  }
+
+  async function handleCreate() {
+    setError("");
+    if (!batchName.trim()) { setError("Batch name is required."); return; }
+    if (!driveFolderId.trim()) { setError("Google Drive folder ID is required."); return; }
+    const validNewStudents = newStudents.filter((s) => s.email.trim());
+    setSaving(true);
+    try {
+      const res = await fetch("/api/batches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: batchName.trim(),
+          driveFolderId: driveFolderId.trim(),
+          setActive,
+          existingStudentIds: selectedExisting,
+          newStudents: validNewStudents,
+        }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed to create batch."); }
+      const { batch } = await res.json();
+      onCreated(batch);
+      onClose();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-medium text-gray-900">Create new batch</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500">Batch name <span className="text-red-400">*</span></span>
+            <input type="text" value={batchName} onChange={(e) => setBatchName(e.target.value)}
+              placeholder="e.g. Q2 2026"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500">Google Drive folder ID <span className="text-red-400">*</span></span>
+            <input type="text" value={driveFolderId} onChange={(e) => setDriveFolderId(e.target.value)}
+              placeholder="Paste the folder ID from Drive"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 font-mono" />
+            <span className="text-[11px] text-gray-400">
+              Found in the Drive URL: drive.google.com/drive/folders/<strong>folder-id</strong>
+            </span>
+          </label>
+          <label className="flex items-center gap-2.5 px-3 py-2.5 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+            <input type="checkbox" checked={setActive} onChange={(e) => setSetActive(e.target.checked)}
+              className="w-4 h-4 accent-orange-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-700">Set as live batch</p>
+              <p className="text-[11px] text-gray-400">Makes this the current batch. Previous live batch becomes read-only.</p>
+            </div>
+          </label>
+          {allStudents.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-gray-500">Enrol existing students</span>
+              <div className="border border-gray-200 rounded-lg p-3 flex flex-col gap-1.5 max-h-40 overflow-y-auto">
+                {allStudents.map((s) => (
+                  <label key={s.id} className="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={selectedExisting.includes(s.id)}
+                      onChange={() => toggleExisting(s.id)} className="w-4 h-4 accent-orange-500" />
+                    <span>{s.name}</span>
+                    <span className="text-gray-400 text-xs ml-auto">{s.email}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex flex-col gap-2">
+            <span className="text-xs text-gray-500">Add new students</span>
+            {newStudents.map((s, i) => (
+              <div key={i} className="flex gap-2 items-center">
+                <input type="text" value={s.name} onChange={(e) => updateNew(i, "name", e.target.value)}
+                  placeholder="Name"
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
+                <input type="email" value={s.email} onChange={(e) => updateNew(i, "email", e.target.value)}
+                  placeholder="Google account email"
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
+                {newStudents.length > 1 && (
+                  <button onClick={() => setNewStudents(newStudents.filter((_, idx) => idx !== i))}
+                    className="text-gray-300 hover:text-red-400 transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button onClick={() => setNewStudents([...newStudents, { name: "", email: "" }])}
+              className="self-start flex items-center gap-1 text-xs text-orange-500 hover:text-orange-600 font-medium">
+              <Plus className="w-3.5 h-3.5" /> Add another student
+            </button>
+          </div>
+        </div>
+        {error && <p className="text-xs text-red-500">{error}</p>}
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+          <button onClick={handleCreate} disabled={saving}
+            className="px-4 py-2 text-sm font-medium bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50">
+            {saving ? "Creating…" : "Create batch"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── Main dashboard ───────────────────────────────────────────────────────────
+
+const TeacherDashboard = ({ session }) => {
+  const [batches, setBatches] = useState([]);
+  const [allStudents, setAllStudents] = useState([]);
+  const [assignments, setAssignments] = useState([]);
+  const [assignmentFolders, setAssignmentFolders] = useState([]);
+  const [loadingData, setLoadingData] = useState(true);
+  const [activeBatch, setActiveBatch] = useState(null);
+
+  // Mobile sidebar drawer
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showCreateBatch, setShowCreateBatch] = useState(false);
+  const [gradeModalAssignment, setGradeModalAssignment] = useState(null);
+  const [gradeFolderFiles, setGradeFolderFiles] = useState([]);
+  const [loadingGradeFiles, setLoadingGradeFiles] = useState(false);
+
+  // ── Fetch batches ──────────────────────────────────────────────────────────
+
+  const fetchBatches = useCallback(async (selectBatchId = null) => {
+    try {
+      const res = await fetch("/api/batches");
+      const data = await res.json();
+      const fetched = data.batches || [];
+      setBatches(fetched);
+
+      const seen = new Set();
+      const all = [];
+      for (const b of fetched) {
+        for (const s of b.students || []) {
+          if (!seen.has(s.id)) { seen.add(s.id); all.push(s); }
+        }
+      }
+      setAllStudents(all);
+
+      if (fetched.length) {
+        if (selectBatchId) {
+          setActiveBatch(fetched.find((b) => b.id === selectBatchId) || fetched[0]);
+        } else {
+          // Keep existing selection stable — use functional update to read current value
+          setActiveBatch((prev) => {
+            if (prev) return fetched.find((b) => b.id === prev.id) || fetched[0];
+            return fetched.find((b) => b.isActive) || fetched[0];
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching batches:", e);
+    }
+  }, []);
+
+  // ── Fetch assignments + Drive folders ──────────────────────────────────────
+
+  const fetchBatchData = useCallback(async (batch) => {
+    if (!batch) return;
+    setLoadingData(true);
+    try {
+      const [aRes, fRes] = await Promise.all([
+        fetch(`/api/assignments?batchId=${batch.id}`),
+        fetch(`/api/drive?action=listFolders&rootFolderId=${batch.driveFolderId}`),
+      ]);
+      const aData = await aRes.json();
+      const fData = await fRes.json();
+      setAssignments(aData.assignments || []);
+      setAssignmentFolders(fData.folders || []);
+    } catch (e) {
+      console.error("Error fetching batch data:", e);
+    } finally {
+      setLoadingData(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchBatches(); }, [fetchBatches]);
+
+  useEffect(() => {
+    setAssignments([]);
+    setAssignmentFolders([]);
+    fetchBatchData(activeBatch);
+  }, [activeBatch?.id, fetchBatchData]);
+
+  // ── Grade modal ────────────────────────────────────────────────────────────
+
+  // useCallback so AssignmentCard/StudentPanel don't re-render when grade modal
+  // state (gradeModalAssignment, gradeFolderFiles, loadingGradeFiles) changes
+  const openGradeModal = useCallback(async (assignment) => {
+    setGradeModalAssignment(assignment);
+    setGradeFolderFiles([]);
+    if (assignment.worksheetFolderId) {
+      setLoadingGradeFiles(true);
+      try {
+        const res = await fetch(`/api/drive?action=listFiles&folderId=${assignment.worksheetFolderId}`);
+        const data = await res.json();
+        setGradeFolderFiles(data.files || []);
+      } catch (e) {
+        console.error("Error fetching folder files:", e);
+      } finally {
+        setLoadingGradeFiles(false);
+      }
+    }
+  }, []); // no deps — uses no outer state, only setters (stable)
+
+  const handleGradeSubmit = useCallback(async (payload) => {
+    try {
+      const res = await fetch("/api/assignments", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        setGradeModalAssignment(null);
+        setGradeFolderFiles([]);
+        // Re-fetch only assignments, not batches — preserves student tab position
+        setActiveBatch((prev) => {
+          if (prev) fetchBatchData(prev);
+          return prev;
+        });
+      }
+    } catch (e) {
+      console.error("Error grading submission:", e);
+    }
+  }, [fetchBatchData]);
+
+  const handleAssignSubmit = useCallback(async (payload) => {
+    try {
+      const res = await fetch("/api/assignments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        setShowAssignModal(false);
+        setActiveBatch((prev) => {
+          if (prev) fetchBatchData(prev);
+          return prev;
+        });
+      }
+    } catch (e) {
+      console.error("Error assigning homework:", e);
+    }
+  }, [fetchBatchData]);
+
+  const handleSelectBatch = useCallback((batch) => {
+    setActiveBatch(batch);
+    setSidebarOpen(false); // close drawer on mobile after selection
+  }, []);
+
+  // ── Derived — memoised so references are stable across unrelated renders ───
+
+  // studentsInBatch only recomputes when activeBatch.students or assignments change.
+  // This prevents StudentPanel's batchId-ref effect from firing spuriously.
+  const studentsInBatch = useMemo(() => {
+    return (activeBatch?.students || []).map((s) => ({
+      ...s,
+      assignments: assignments
+        .filter((a) => a.studentId === s.id)
+        .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)),
+    }));
+  }, [activeBatch?.students, assignments]);
+
+  const { gradedCount, overdueCount, avgAll } = useMemo(() => {
+    const gradedCount = assignments.filter((a) => a.gradedFileId).length;
+    const overdueCount = assignments.filter((a) => getAssignmentStatus(a) === "overdue").length;
+    const scores = assignments.filter((a) => a.score != null).map((a) => a.score);
+    const avgAll = scores.length
+      ? Math.round(scores.reduce((s, n) => s + n, 0) / scores.length) + "%"
+      : "—";
+    return { gradedCount, overdueCount, avgAll };
+  }, [assignments]);
+
+  const isHistoric = activeBatch ? !activeBatch.isActive : false;
+  const liveBatch = useMemo(() => batches.find((b) => b.isActive), [batches]);
+
+  const sidebarProps = {
+    batches,
+    activeBatch,
+    liveBatch,
+    onSelectBatch: handleSelectBatch,
+    onNewBatch: () => { setShowCreateBatch(true); setSidebarOpen(false); },
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+
+      {/* Top nav */}
+      <AppNav session={session} onMenuClick={() => setSidebarOpen((open) => !open)} />
+
+      {/* Mobile drawer backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/30 z-30 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <div className="flex flex-1 min-h-0">
+
+        {/* Desktop sidebar — always visible on md+ */}
+        <aside className="hidden md:flex w-52 shrink-0 bg-[#fdf8eb] border-r border-amber-100 flex-col">
+          <SidebarContent {...sidebarProps} />
+        </aside>
+
+        {/* Mobile drawer — slides in from left */}
+        <aside
+          className={`fixed top-0 left-0 h-full w-64 bg-[#fdf8eb] border-r border-amber-100 flex flex-col z-40
+            transform transition-transform duration-200 ease-in-out md:hidden
+            ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+        >
+          {/* Drawer header with close button */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-amber-100">
+            <span className="text-sm font-medium text-amber-900">Batches</span>
+            <button onClick={() => setSidebarOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <SidebarContent {...sidebarProps} />
+        </aside>
+
+        {/* Main content */}
+        <div className="flex flex-col flex-1 min-w-0">
+          <header className="flex items-center justify-between px-4 md:px-6 py-4 bg-white border-b border-gray-200 shrink-0">
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base font-medium text-gray-900">
+                  {activeBatch?.name ?? "Select a batch"}
+                </h1>
+                {isHistoric && (
+                  <span className="text-[11px] font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
+                    Read only
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {studentsInBatch.length} student{studentsInBatch.length !== 1 ? "s" : ""}
+                {" · "}{assignments.length} assignments
+              </p>
+            </div>
+            {activeBatch && !isHistoric && (
+              <button
+                onClick={() => setShowAssignModal(true)}
+                className="flex items-center gap-1.5 px-3 md:px-4 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="hidden sm:inline">Assign homework</span>
+                <span className="sm:hidden">Assign</span>
+              </button>
+            )}
+          </header>
+
+          <main className="flex-1 overflow-y-auto px-4 md:px-6 py-5 flex flex-col gap-5">
+            {loadingData ? (
+              <div className="flex items-center justify-center h-48">
+                <div className="w-8 h-8 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : !activeBatch ? (
+              <div className="flex items-center justify-center h-40 bg-white rounded-xl border border-gray-100 text-sm text-gray-400">
+                Create a batch to get started.
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: "Students",           value: studentsInBatch.length },
+                    { label: "Assignments graded", value: gradedCount },
+                    { label: "Overdue",            value: overdueCount },
+                    { label: "Avg. score",         value: avgAll },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-white border border-gray-100 rounded-lg px-4 py-3">
+                      <p className="text-[11px] text-gray-400 mb-1">{label}</p>
+                      <p className="text-xl font-medium text-gray-900">{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-white border border-gray-100 rounded-xl p-4 md:p-5">
+                  <StudentPanel
+                    students={studentsInBatch}
+                    batchId={activeBatch.id}
+                    isHistoric={isHistoric}
+                    onGrade={openGradeModal}
+                  />
+                </div>
+              </>
+            )}
+          </main>
+        </div>
+      </div>
+
+      {/* Modals */}
+      {gradeModalAssignment && (
+        <GradeModal
+          assignment={gradeModalAssignment}
+          folderFiles={gradeFolderFiles}
+          loadingFiles={loadingGradeFiles}
+          onClose={() => { setGradeModalAssignment(null); setGradeFolderFiles([]); }}
+          onSubmit={handleGradeSubmit}
+        />
+      )}
+
+      {showAssignModal && activeBatch && (
+        <AssignModal
+          batch={activeBatch}
+          assignmentFolders={assignmentFolders}
+          onClose={() => setShowAssignModal(false)}
+          onSubmit={handleAssignSubmit}
+        />
+      )}
+
+      {showCreateBatch && (
+        <CreateBatchModal
+          allStudents={allStudents}
+          onClose={() => setShowCreateBatch(false)}
+          onCreated={(newBatch) => fetchBatches(newBatch.id)}
+        />
       )}
     </div>
   );
