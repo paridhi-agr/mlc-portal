@@ -86,6 +86,7 @@ export async function POST(request) {
       worksheetFileName,
       solutionFileId,
       dueDate,
+      maxScore,
     } = body;
 
     if (
@@ -94,7 +95,8 @@ export async function POST(request) {
       !worksheetName ||
       !worksheetFolderId ||
       !worksheetFileId ||
-      !dueDate
+      !dueDate ||
+      !maxScore || maxScore <= 0
     ) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
@@ -120,6 +122,7 @@ export async function POST(request) {
         solutionFileId: solutionFileId || null,
         dueDate: safeDueDate,
         status: 'assigned',
+        maxScore: Number(maxScore)
       })),
     });
 

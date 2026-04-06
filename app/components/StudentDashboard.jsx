@@ -1,18 +1,16 @@
 "use client";
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { X, ClipboardList, FileText, Download, CheckCircle } from "lucide-react";
-import { signOut } from "next-auth/react";
 import { AppNav } from "./shared/AppNav";
 import { SidebarContent } from "./shared/BatchSidebar";
 import { StatusBadge } from "./shared/StatusBadge";
 import { ScoreRing } from "./shared/ScoreRing";
+import { computeBatchAverage } from "@/lib/scoreUtil";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function avgScore(assignments) {
-  const scored = assignments.filter((a) => a.score !== null && a.score !== undefined);
-  if (!scored.length) return null;
-  return Math.round(scored.reduce((s, a) => s + a.score, 0) / scored.length);
+  return computeBatchAverage(assignments)
 }
 
 function formatDate(dateStr) {
@@ -38,7 +36,7 @@ const AssignmentRow = React.memo(function AssignmentRow({ assignment }) {
           </div>
           <p className="text-[11px] text-gray-400">Due {formatDate(assignment.dueDate)}</p>
         </div>
-        {isGraded && assignment.score != null && <ScoreRing score={assignment.score} />}
+        {isGraded && assignment.score != null && <ScoreRing score={assignment.score} maxScore={assignment.maxScore} />}
       </div>
 
       {/* File links */}
@@ -248,7 +246,7 @@ const StudentDashboard = ({ session }) => {
                 {/* Assignment list */}
                 <div className="bg-white border border-gray-100 rounded-xl p-4 md:p-5 grid grid-cols-2 gap-3">
                   {assignments.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 gap-3">
+                    <div className="flex flex-col items-center justify-center py-12">
                       <ClipboardList className="w-10 h-10 text-gray-300" />
                       <p className="text-sm text-gray-400">No assignments in this batch</p>
                     </div>

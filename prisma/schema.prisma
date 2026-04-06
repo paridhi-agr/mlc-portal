@@ -79,6 +79,7 @@ model Assignment {
   submissionReceivedDate DateTime?
 
   gradedFileId           String?
+  maxScore               Int?      // total marks for this assignment
   score                  Int?
   status                 String    @default("assigned") // assigned | overdue | graded | late_submission
   createdAt              DateTime  @default(now())

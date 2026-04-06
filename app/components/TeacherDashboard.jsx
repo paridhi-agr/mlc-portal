@@ -1,11 +1,10 @@
 'use client';
-import { X, Plus, Menu } from "lucide-react";
-import { signOut } from "next-auth/react";
+import { X, Plus } from "lucide-react";
 import { AppNav } from "./shared/AppNav";
 import { SidebarContent } from "./shared/BatchSidebar";
 import { StatusBadge } from "./shared/StatusBadge";
-import { ScoreRing } from "./shared/ScoreRing";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { computeBatchAverage } from "@/lib/scoreUtil";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -21,9 +20,7 @@ function getAssignmentStatus(assignment) {
 }
 
 function avgScore(assignments) {
-  const scored = assignments.filter((a) => a.score !== null && a.score !== undefined);
-  if (!scored.length) return null;
-  return Math.round(scored.reduce((s, a) => s + a.score, 0) / scored.length);
+  return computeBatchAverage(assignments);
 }
 
 function formatDate(dateStr) {
@@ -44,7 +41,7 @@ const AssignmentCard = React.memo(function AssignmentCard({ assignment, isHistor
         <p className="text-[11px] text-gray-400 mt-0.5">Due {formatDate(assignment.dueDate)}</p>
       </div>
       {assignment.score !== null && assignment.score !== undefined && (
-        <p className="text-sm font-medium text-amber-800">{assignment.score}%</p>
+        <p className="text-sm font-medium text-amber-800">{assignment.score}/{assignment.maxScore}</p>
       )}
       <div className="flex items-center justify-between mt-auto pt-1">
         <StatusBadge status={status} />
@@ -198,8 +195,8 @@ function GradeModal({ assignment, folderFiles, loadingFiles, onClose, onSubmit }
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-gray-500">Score (0–100)</span>
-            <input type="number" min="0" max="100" value={score} onChange={(e) => setScore(e.target.value)}
+            <span className="text-xs text-gray-500">Score (1 to {assignment.maxScore})</span>
+            <input type="number" min="1" max={assignment.maxScore} value={score} onChange={(e) => setScore(e.target.value)}
               placeholder="Leave blank if not scoring yet"
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
           </label>
@@ -257,6 +254,7 @@ function AssignModal({ batch, assignmentFolders, onClose, onSubmit }) {
     d.setDate(d.getDate() + 7);
     return d.toISOString().split("T")[0];
   });
+  const [maxScore, setMaxScore] = useState(25);
 
   async function handleFolderChange(folderId) {
     setSelectedFolder(folderId);
@@ -297,6 +295,7 @@ function AssignModal({ batch, assignmentFolders, onClose, onSubmit }) {
       worksheetFileName: file.name,
       solutionFileId: null,
       dueDate: safeDueDate,
+      maxScore: Number(maxScore),
     });
   }
 
@@ -360,6 +359,12 @@ function AssignModal({ batch, assignmentFolders, onClose, onSubmit }) {
             <span className="text-xs text-gray-500">Due date <span className="text-red-400">*</span></span>
             <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500">Max Score <span className="text-red-400">*</span></span>
+            <input type="number" min="1" value={maxScore} onChange={(e) => setMaxScore(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+              placeholder="Maximum score possible for this assignment" required />
           </label>
         </div>
         <div className="flex gap-2 justify-end">
@@ -666,15 +671,38 @@ const TeacherDashboard = ({ session }) => {
     }));
   }, [activeBatch?.students, assignments]);
 
+  // const { gradedCount, overdueCount, avgAll } = useMemo(() => {
+  //   const gradedCount = assignments.filter((a) => a.gradedFileId).length;
+  //   const overdueCount = assignments.filter((a) => getAssignmentStatus(a) === "overdue").length;
+  //   const scores = assignments.filter((a) => a.score != null).map((a) => a.score);
+  //   const avgAll = scores.length
+  //     ? Math.round(scores.reduce((s, n) => s + n, 0) / scores.length) + "%"
+  //     : "—";
+  //   return { gradedCount, overdueCount, avgAll };
+  // }, [assignments]);
+
   const { gradedCount, overdueCount, avgAll } = useMemo(() => {
-    const gradedCount = assignments.filter((a) => a.gradedFileId).length;
-    const overdueCount = assignments.filter((a) => getAssignmentStatus(a) === "overdue").length;
-    const scores = assignments.filter((a) => a.score != null).map((a) => a.score);
-    const avgAll = scores.length
-      ? Math.round(scores.reduce((s, n) => s + n, 0) / scores.length) + "%"
-      : "—";
-    return { gradedCount, overdueCount, avgAll };
-  }, [assignments]);
+  const gradedAssignments = assignments.filter(a => a.score != null);
+
+  const gradedCount = assignments.filter(a => a.gradedFileId).length;
+
+  const overdueCount = assignments.filter(
+    (a) => getAssignmentStatus(a) === "overdue"
+  ).length;
+
+  // ⭐ normalize scores before averaging
+  const percentages = gradedAssignments.map(a =>
+    a.score / a.maxScore
+  );
+
+  const avgAll = percentages.length
+    ? Math.round(
+        (percentages.reduce((sum, p) => sum + p, 0) / percentages.length) * 100
+      ) + "%"
+    : "—";
+
+  return { gradedCount, overdueCount, avgAll };
+}, [assignments]);
 
   const isHistoric = activeBatch ? !activeBatch.isActive : false;
   const liveBatch = useMemo(() => batches.find((b) => b.isActive), [batches]);
@@ -770,10 +798,10 @@ const TeacherDashboard = ({ session }) => {
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
-                    { label: "Students",           value: studentsInBatch.length },
+                    { label: "Students", value: studentsInBatch.length },
                     { label: "Assignments graded", value: gradedCount },
-                    { label: "Overdue",            value: overdueCount },
-                    { label: "Avg. score",         value: avgAll },
+                    { label: "Overdue", value: overdueCount },
+                    { label: "Avg. score", value: avgAll },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-white border border-gray-100 rounded-lg px-4 py-3">
                       <p className="text-[11px] text-gray-400 mb-1">{label}</p>
