@@ -459,7 +459,7 @@ function CreateBatchModal({ allStudents, onClose, onCreated }) {
           </label>
           {allStudents.length > 0 && (
             <div className="flex flex-col gap-1">
-              <span className="text-xs text-gray-500">Enrol existing students</span>
+              <span className="text-xs text-gray-500">Enroll existing students</span>
               <div className="border border-gray-200 rounded-lg p-3 flex flex-col gap-1.5 max-h-40 overflow-y-auto">
                 {allStudents.map((s) => (
                   <label key={s.id} className="flex items-center gap-2 text-sm text-gray-700">
@@ -509,6 +509,107 @@ function CreateBatchModal({ allStudents, onClose, onCreated }) {
   );
 }
 
+//--- Add Student Modal ------------
+function AddStudentModal({ enrolledStudentIds, onClose, onAdd }) {
+  const [search, setSearch] = useState('');
+  const [adding, setAdding] = useState(null);
+  const [allStudents, setAllStudents] = useState([]);
+  const [loadingStudents, setLoadingStudents] = useState(true);
+
+  useEffect(() => {
+    async function fetchAllStudents() {
+      try {
+        const res = await fetch('/api/students');
+        const data = await res.json();
+        setAllStudents(data.students || []);
+      } catch (e) {
+        console.error('Error fetching students:', e);
+      } finally {
+        setLoadingStudents(false);
+      }
+    }
+    fetchAllStudents();
+  }, []);
+
+  const unenrolled = allStudents.filter(
+    (s) =>
+      !enrolledStudentIds.includes(s.id) &&
+      (s.name?.toLowerCase().includes(search.toLowerCase()) ||
+        s.email?.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  async function handleAdd(studentId) {
+    setAdding(studentId);
+    await onAdd(studentId);
+    setAdding(null);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto p-6 flex flex-col gap-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-base font-medium text-gray-900">Add student to batch</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Only students not yet in this batch are shown</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <input
+          type="text"
+          placeholder="Search by name or email..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 w-full"
+          autoFocus
+        />
+
+        <div className="flex flex-col gap-2">
+          {loadingStudents ? (
+            <div className="flex justify-center py-6">
+              <div className="w-6 h-6 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : unenrolled.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">
+              {search ? 'No matching students found' : 'All registered students are already enrolled in this batch'}
+            </p>
+          ) : (
+            unenrolled.map((s) => (
+              <div
+                key={s.id}
+                className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-gray-100 hover:border-amber-200 hover:bg-amber-50 transition-colors"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {s.image ? (
+                    <img src={s.image} alt={s.name} className="w-7 h-7 rounded-full flex-shrink-0" />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-semibold flex-shrink-0">
+                      {s.name?.charAt(0) || '?'}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{s.name}</p>
+                    <p className="text-xs text-gray-400 truncate">{s.email}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleAdd(s.id)}
+                  disabled={adding === s.id}
+                  className="flex-shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50 transition-colors"
+                >
+                  {adding === s.id ? 'Adding…' : 'Add'}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 // ─── Main dashboard ───────────────────────────────────────────────────────────
 
@@ -528,6 +629,7 @@ const TeacherDashboard = ({ session }) => {
   const [gradeModalAssignment, setGradeModalAssignment] = useState(null);
   const [gradeFolderFiles, setGradeFolderFiles] = useState([]);
   const [loadingGradeFiles, setLoadingGradeFiles] = useState(false);
+  const [showAddStudentModal, setShowAddStudentModal] = useState(false);
 
   // ── Fetch batches ──────────────────────────────────────────────────────────
 
@@ -540,9 +642,9 @@ const TeacherDashboard = ({ session }) => {
 
       const seen = new Set();
       const all = [];
-      for (const b of fetched) {
-        for (const s of b.students || []) {
-          if (!seen.has(s.id)) { seen.add(s.id); all.push(s); }
+      for (const batch of fetched) {
+        for (const student of batch.students || []) {
+          if (!seen.has(student.id)) { seen.add(student.id); all.push(student); }
         }
       }
       setAllStudents(all);
@@ -658,6 +760,26 @@ const TeacherDashboard = ({ session }) => {
     setSidebarOpen(false); // close drawer on mobile after selection
   }, []);
 
+  const handleAddStudentToBatch = useCallback(async (studentId) => {
+    if (!activeBatch) return;
+    try {
+      const res = await fetch('/api/batches', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchId: activeBatch.id, studentId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Failed to add student');
+        return;
+      }
+      setShowAddStudentModal(false);
+      fetchBatches(); // refresh so sidebar + studentsInBatch update
+    } catch (e) {
+      console.error('Error adding student to batch:', e);
+    }
+  }, [activeBatch, fetchBatches]);
+
   // ── Derived — memoised so references are stable across unrelated renders ───
 
   // studentsInBatch only recomputes when activeBatch.students or assignments change.
@@ -671,38 +793,28 @@ const TeacherDashboard = ({ session }) => {
     }));
   }, [activeBatch?.students, assignments]);
 
-  // const { gradedCount, overdueCount, avgAll } = useMemo(() => {
-  //   const gradedCount = assignments.filter((a) => a.gradedFileId).length;
-  //   const overdueCount = assignments.filter((a) => getAssignmentStatus(a) === "overdue").length;
-  //   const scores = assignments.filter((a) => a.score != null).map((a) => a.score);
-  //   const avgAll = scores.length
-  //     ? Math.round(scores.reduce((s, n) => s + n, 0) / scores.length) + "%"
-  //     : "—";
-  //   return { gradedCount, overdueCount, avgAll };
-  // }, [assignments]);
-
   const { gradedCount, overdueCount, avgAll } = useMemo(() => {
-  const gradedAssignments = assignments.filter(a => a.score != null);
+    const gradedAssignments = assignments.filter(a => a.score != null);
 
-  const gradedCount = assignments.filter(a => a.gradedFileId).length;
+    const gradedCount = assignments.filter(a => a.gradedFileId).length;
 
-  const overdueCount = assignments.filter(
-    (a) => getAssignmentStatus(a) === "overdue"
-  ).length;
+    const overdueCount = assignments.filter(
+      (a) => getAssignmentStatus(a) === "overdue"
+    ).length;
 
-  // ⭐ normalize scores before averaging
-  const percentages = gradedAssignments.map(a =>
-    a.score / a.maxScore
-  );
+    // ⭐ normalize scores before averaging
+    const percentages = gradedAssignments.map(a =>
+      a.score / a.maxScore
+    );
 
-  const avgAll = percentages.length
-    ? Math.round(
+    const avgAll = percentages.length
+      ? Math.round(
         (percentages.reduce((sum, p) => sum + p, 0) / percentages.length) * 100
       ) + "%"
-    : "—";
+      : "—";
 
-  return { gradedCount, overdueCount, avgAll };
-}, [assignments]);
+    return { gradedCount, overdueCount, avgAll };
+  }, [assignments]);
 
   const isHistoric = activeBatch ? !activeBatch.isActive : false;
   const liveBatch = useMemo(() => batches.find((b) => b.isActive), [batches]);
@@ -774,14 +886,24 @@ const TeacherDashboard = ({ session }) => {
               </p>
             </div>
             {activeBatch && !isHistoric && (
-              <button
-                onClick={() => setShowAssignModal(true)}
-                className="flex items-center gap-1.5 px-3 md:px-4 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Assign homework</span>
-                <span className="sm:hidden">Assign</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowAddStudentModal(true)}
+                  className="flex items-center gap-1.5 px-3 md:px-4 py-2 bg-white border border-orange-300 text-orange-500 text-sm font-medium rounded-lg hover:bg-amber-50 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="hidden sm:inline">Add student</span>
+                  <span className="sm:hidden">Add</span>
+                </button>
+                <button
+                  onClick={() => setShowAssignModal(true)}
+                  className="flex items-center gap-1.5 px-3 md:px-4 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="hidden sm:inline">Assign homework</span>
+                  <span className="sm:hidden">Assign</span>
+                </button>
+              </div>
             )}
           </header>
 
@@ -843,6 +965,15 @@ const TeacherDashboard = ({ session }) => {
           onSubmit={handleAssignSubmit}
         />
       )}
+
+      {showAddStudentModal && activeBatch && (
+        <AddStudentModal
+          enrolledStudentIds={(activeBatch.students || []).map((s) => s.id)}
+          onClose={() => setShowAddStudentModal(false)}
+          onAdd={handleAddStudentToBatch}
+        />
+      )}
+
 
       {showCreateBatch && (
         <CreateBatchModal
