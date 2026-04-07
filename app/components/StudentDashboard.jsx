@@ -111,7 +111,7 @@ const StudentDashboard = ({ session }) => {
   }, []);
 
   const fetchAssignments = useCallback(async (batch) => {
-    if (!batch) return;
+    if (!batch) {setLoadingData(false);return};
     setLoadingData(true);
     try {
       const res = await fetch(`/api/assignments?batchId=${batch.id}`);
@@ -149,7 +149,6 @@ const StudentDashboard = ({ session }) => {
 
   const isHistoric = activeBatch ? !activeBatch.isActive : false;
   const liveBatch = useMemo(() => batches.find((b) => b.isActive), [batches]);
-  const firstName = session?.user?.name?.split(" ")[0] || "there";
 
   const sidebarProps = {
     batches,
@@ -199,7 +198,7 @@ const StudentDashboard = ({ session }) => {
         <div className="flex flex-col flex-1 min-w-0">
 
           {/* Content header */}
-          <header className="flex items-center justify-between px-4 md:px-6 py-4 bg-white border-b border-gray-200 shrink-0">
+          {activeBatch ? (<header className="flex items-center justify-between px-4 md:px-6 py-4 bg-white border-b border-gray-200 shrink-0">
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-medium text-gray-900">
@@ -215,7 +214,8 @@ const StudentDashboard = ({ session }) => {
                 Welcome back, {firstName}
               </p> */}
             </div>
-          </header>
+          </header>) :(<></>)}
+          
 
           <main className="flex-1 overflow-y-auto px-4 md:px-6 py-5 flex flex-col gap-5">
             {loadingData ? (
@@ -223,8 +223,22 @@ const StudentDashboard = ({ session }) => {
                 <div className="w-8 h-8 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : !activeBatch ? (
-              <div className="flex items-center justify-center h-40 bg-white rounded-xl border border-gray-100 text-sm text-gray-400">
-                No batches available yet.
+              <div className="flex flex-col items-center justify-center h-full py-20 gap-4 text-center">
+                <div className="w-14 h-14 rounded-full bg-amber-50 border border-amber-100 flex items-center justify-center">
+                  <ClipboardList className="w-6 h-6 text-orange-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-800 mb-1">You're not enrolled in a batch yet</p>
+                  <p className="text-xs text-gray-400 max-w-xs">
+                    Your teacher will add you to a batch soon. Once enrolled, your assignments will appear here.
+                  </p>
+                </div>
+                <div className="mt-2 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3 max-w-xs">
+                  <p className="text-xs text-amber-800">
+                    If you think this is a mistake, reach out to your teacher at{" "}
+                    <span className="font-medium">infobymlc@gmail.com</span>
+                  </p>
+                </div>
               </div>
             ) : (
               <>
@@ -244,9 +258,9 @@ const StudentDashboard = ({ session }) => {
                 </div>
 
                 {/* Assignment list */}
-                <div className="bg-white border border-gray-100 rounded-xl p-4 md:p-5 grid grid-cols-2 gap-3">
+                <div className={`bg-white border border-gray-100 rounded-xl p-4 md:p-5 ${assignments.length > 0 ? 'grid grid-cols-2 gap-3' : ''}`}>
                   {assignments.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12">
+                    <div className="flex flex-col items-center justify-center py-12 gap-2">
                       <ClipboardList className="w-10 h-10 text-gray-300" />
                       <p className="text-sm text-gray-400">No assignments in this batch</p>
                     </div>
