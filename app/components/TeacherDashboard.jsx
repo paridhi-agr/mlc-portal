@@ -825,6 +825,7 @@ const TeacherDashboard = ({ session }) => {
     liveBatch,
     onSelectBatch: handleSelectBatch,
     onNewBatch: () => { setShowCreateBatch(true); setSidebarOpen(false); },
+    role: "teacher"
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -844,9 +845,9 @@ const TeacherDashboard = ({ session }) => {
       )}
 
       <div className="flex flex-1 min-h-0">
-
         {/* Desktop sidebar — always visible on md+ */}
         <aside className="hidden md:flex w-52 shrink-0 bg-[#fdf8eb] border-r border-amber-100 flex-col">
+          
           <SidebarContent {...sidebarProps} />
         </aside>
 

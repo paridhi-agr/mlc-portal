@@ -155,7 +155,8 @@ const StudentDashboard = ({ session }) => {
     activeBatch,
     liveBatch,
     onSelectBatch: handleSelectBatch,
-    onNewBatch: null, // students can't create batches
+    onNewBatch: null, // students can't create batches,
+    role: "student"
   };
 
   // ── Render ───────────────────────────────────────────────────────────────

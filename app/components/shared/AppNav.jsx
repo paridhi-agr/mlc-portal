@@ -23,12 +23,12 @@ export function AppNav({ session, onMenuClick }) {
           {session?.user?.image && (
             <img src={session.user.image} alt={session.user.name} className="w-8 h-8 rounded-full" />
           )}
-          <span className="text-gray-700 text-sm hidden sm:inline">
+          <span className="text-amber-700 text-sm hidden sm:inline ">
             Welcome, {session?.user?.name}
           </span>
           <button
             onClick={() => signOut()}
-            className="flex items-center gap-1.5 text-gray-600 hover:text-gray-900 text-sm"
+            className="flex items-center gap-1.5 text-amber-600 hover:text-amber-900 text-sm"
           >
             <LogOut className="w-4 h-4" />
             <span className="hidden sm:inline">Logout</span>

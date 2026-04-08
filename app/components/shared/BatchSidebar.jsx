@@ -1,9 +1,15 @@
 "use client";
 import { Plus } from "lucide-react";
 
-export function SidebarContent({ batches, activeBatch, liveBatch, onSelectBatch, onNewBatch }) {
+export function SidebarContent({ batches, activeBatch, liveBatch, onSelectBatch, onNewBatch, role }) {
   return (
     <>
+    <div className="px-5 pt-4 pb-2">
+        <p className="text-xs font-semibold text-amber-700 uppercase tracking-widest">
+          {role === 'teacher' ? 'Teacher Dashboard' : 'Student Dashboard'}
+        </p>
+      </div>
+      <hr className="mx-3 border-amber-100 mb-1" />
       {onNewBatch && (
         <>
           <div className="px-3 pt-4 pb-2">
