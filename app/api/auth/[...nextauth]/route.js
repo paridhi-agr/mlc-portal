@@ -35,11 +35,11 @@ export const authOptions = {
                     where: { email: user.email },
                     update: {
                         role: authorizedUser.role,
-                        name: user.name || authorizedUser.name
+                        name: authorizedUser.name || user.name
                     },
                     create: {
                         email: user.email,
-                        name: user.name || authorizedUser.name,
+                        name: authorizedUser.name || user.name,
                         role: authorizedUser.role,
                         image: user.image
                     }
