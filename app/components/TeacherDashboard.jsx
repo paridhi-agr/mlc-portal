@@ -32,7 +32,11 @@ function formatDate(dateStr) {
 
 const AssignmentCard = React.memo(function AssignmentCard({ assignment, isHistoric, onGrade }) {
   const status = getAssignmentStatus(assignment);
-  const gradeActive = !isHistoric && (status === "assigned" || status === "overdue");
+  const isGraded = status === "graded" || status === "late_submission";
+  // Grade: active for assigned/overdue (first-time grading)
+  // Edit:  active for graded/late_submission (regrading), never on historic batches
+  const canGrade  = !isHistoric && !isGraded;
+  const canEdit   = !isHistoric && isGraded;
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-2 min-w-0">
@@ -45,17 +49,26 @@ const AssignmentCard = React.memo(function AssignmentCard({ assignment, isHistor
       )}
       <div className="flex items-center justify-between mt-auto pt-1">
         <StatusBadge status={status} />
-        <button
-          onClick={() => gradeActive && onGrade(assignment)}
-          disabled={!gradeActive}
-          className={`text-[11px] font-medium px-2.5 py-1 rounded border transition-colors
-            ${gradeActive
-              ? "border-orange-400 text-orange-500 hover:bg-orange-50 cursor-pointer"
-              : "border-gray-200 text-gray-300 cursor-not-allowed"
-            }`}
-        >
-          Grade
-        </button>
+        {canGrade && (
+          <button
+            onClick={() => onGrade(assignment)}
+            className="text-[11px] font-medium px-2.5 py-1 rounded border border-orange-400 text-orange-500 hover:bg-orange-50 transition-colors"
+          >
+            Grade
+          </button>
+        )}
+        {canEdit && (
+          <button
+            onClick={() => onGrade(assignment)}
+            className="text-[11px] font-medium px-2.5 py-1 rounded border border-gray-300 text-gray-500 hover:border-orange-400 hover:text-orange-500 hover:bg-orange-50 transition-colors"
+          >
+            Edit Grade
+          </button>
+        )}
+        {!canGrade && !canEdit && (
+          // Historic batch — show a static disabled indicator
+          <span className="text-[10px] text-gray-300 px-2.5 py-1">—</span>
+        )}
       </div>
     </div>
   );
@@ -150,10 +163,28 @@ const StudentPanel = React.memo(function StudentPanel({ students, batchId, isHis
 // ─── Grade modal ──────────────────────────────────────────────────────────────
 
 function GradeModal({ assignment, folderFiles, loadingFiles, onClose, onSubmit }) {
-  const [score, setScore] = useState("");
-  const [submissionDate, setSubmissionDate] = useState(new Date().toISOString().split("T")[0]);
-  const [solutionFile, setSolutionFile] = useState("");
-  const [gradedFile, setGradedFile] = useState("");
+  const isRegrade = !!(assignment.gradedFileId);
+
+  // Pre-populate with existing values when regrading so the teacher only
+  // has to change what's wrong — not re-enter everything from scratch.
+  const [score, setScore] = useState(
+    assignment.score !== null && assignment.score !== undefined
+      ? String(assignment.score)
+      : ""
+  );
+  const [submissionDate, setSubmissionDate] = useState(() => {
+    // If regrading, show the already-recorded submission date.
+    if (assignment.submissionReceivedDate) {
+      return new Date(assignment.submissionReceivedDate).toISOString().split("T")[0]; // "YYYY-MM-DD" in UTC
+    }
+    return new Date().toISOString().split("T")[0]
+  });
+  // Pre-select the files that are already on record (matched by ID in folderFiles).
+  // The select will show the correct option once folderFiles loads.
+  const [solutionFile, setSolutionFile] = useState(assignment.solutionFileId ?? "");
+  const [gradedFile, setGradedFile] = useState(assignment.gradedFileId ?? "");
+
+
 
   function handleSubmit() {
     const hasScore = score !== "" && Number(score) >= 0 && Number(score) <= 100;
@@ -180,7 +211,7 @@ function GradeModal({ assignment, folderFiles, loadingFiles, onClose, onSubmit }
       <div className="bg-white rounded-xl shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto p-6 flex flex-col gap-4">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-base font-medium text-gray-900">Grade submission</h2>
+            <h2 className="text-base font-medium text-gray-900"> {isRegrade ? "Edit grade" : "Grade submission"}</h2>
             <p className="text-sm text-orange-500 mt-0.5">{assignment.worksheetName}</p>
             <p className="text-xs text-gray-400 mt-0.5">{assignment.student?.name}</p>
           </div>
@@ -232,7 +263,7 @@ function GradeModal({ assignment, folderFiles, loadingFiles, onClose, onSubmit }
           </button>
           <button onClick={handleSubmit}
             className="px-4 py-2 text-sm font-medium bg-orange-500 text-white rounded-lg hover:bg-orange-600">
-            Submit grade
+             {isRegrade ? "Update grade" : "Submit grade"}
           </button>
         </div>
       </div>
