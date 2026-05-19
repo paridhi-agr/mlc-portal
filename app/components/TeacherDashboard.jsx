@@ -1,5 +1,5 @@
 'use client';
-import { X, Plus } from "lucide-react";
+import { X, Plus, FileText, Download, CheckCircle } from "lucide-react";
 import { AppNav } from "./shared/AppNav";
 import { SidebarContent } from "./shared/BatchSidebar";
 import { StatusBadge } from "./shared/StatusBadge";
@@ -68,6 +68,33 @@ const AssignmentCard = React.memo(function AssignmentCard({ assignment, isHistor
         {!canGrade && !canEdit && (
           // Historic batch — show a static disabled indicator
           <span className="text-[10px] text-gray-300 px-2.5 py-1">—</span>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-4">
+        <a
+          href={`https://drive.google.com/file/d/${assignment.worksheetFileId}/view`}
+          target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-orange-500 hover:text-orange-600 hover:underline"
+        >
+          <FileText className="w-3 h-3" /> View assignment
+        </a>
+        {assignment.solutionFileId && (
+        <a
+            href={`https://drive.google.com/file/d/${assignment.solutionFileId}/view`}
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 hover:underline"
+          >
+            <Download className="w-3 h-3" /> Solution
+          </a>
+        )}
+        {assignment.gradedFileId && (
+          <a
+            href={`https://drive.google.com/file/d/${assignment.gradedFileId}/view`}
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 hover:underline"
+          >
+            <CheckCircle className="w-3 h-3" /> Graded file
+          </a>
         )}
       </div>
     </div>
